@@ -1,1 +1,1 @@
-{\n  "version": "2.0\",\n  "extensions": {\n    "http": {\n      "routePrefix": "api"\n    }\n  },\n  "functions": {\n    "function1": {\n      "handler": "function1.handler"\n    },\n    "function2": {\n      "handler": "function2.handler"\n    }\n  }\n}
+{"version":"2.0","logging":{"applicationInsights":{"samplingSettings":{"isEnabled":true,"maxTelemetryItemsPerSecond":20}}},"extensionBundle":{"id":"Microsoft.Azure.Functions.ExtensionBundle","version":"[4.*, 5.0.0)"}}
