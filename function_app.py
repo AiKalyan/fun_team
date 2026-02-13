@@ -29,3 +29,47 @@ def http_trigger(req: func.HttpRequest) -> func.HttpResponse:
             "Please pass a name on the query string or in the request body",
             status_code=400
         )
+
+@app.function_name("MessageHandler")
+@app.route(route="messages", methods=["POST"])
+def message_handler(req: func.HttpRequest) -> func.HttpResponse:
+    """
+    Azure Function that processes messages via POST request
+    Expects a JSON body with a 'message' field containing a string
+    """
+    logging.info('Message handler function processing a POST request.')
+    
+    try:
+        req_body = req.get_json()
+        message = req_body.get('message')
+        
+        if not message:
+            return func.HttpResponse(
+                "Error: 'message' field is required in the request body",
+                status_code=400
+            )
+        
+        if not isinstance(message, str):
+            return func.HttpResponse(
+                "Error: 'message' must be a string",
+                status_code=400
+            )
+        
+        logging.info(f'Received message: {message}')
+        
+        return func.HttpResponse(
+            f"Message received successfully: {message}",
+            status_code=200
+        )
+        
+    except ValueError:
+        return func.HttpResponse(
+            "Error: Invalid JSON in request body",
+            status_code=400
+        )
+    except Exception as e:
+        logging.error(f'Error processing message: {str(e)}')
+        return func.HttpResponse(
+            f"Error processing message: {str(e)}", 
+            status_code=500
+        )
