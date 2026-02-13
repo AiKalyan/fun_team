@@ -1,5 +1,44 @@
 import azure.functions as func
 import logging
+import os
+import json
+
+
+
+def build_adaptive_card(message: str):
+    # Adaptive Card 1.4 payload
+    return {
+        "type": "message",
+        "attachments": [
+            {
+                "contentType": "application/vnd.microsoft.card.adaptive",
+                "content": {
+                    "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+                    "type": "AdaptiveCard",
+                    "version": "1.4",
+                    "body": [
+                        {
+                            "type": "TextBlock",
+                            "size": "Large",
+                            "weight": "Bolder",
+                            "text": "New Message Received"
+                        },
+                        {
+                            "type": "TextBlock",
+                            "text": message,
+                            "wrap": True
+                        },
+                        {
+                            "type": "FactSet",
+                            "facts": [
+                                {"title": "Source:", "value": "Azure Function"},
+                            ]
+                        }
+                    ]
+                }
+            }
+        ]
+    }
 
 app = func.FunctionApp()
 
@@ -56,9 +95,11 @@ def message_handler(req: func.HttpRequest) -> func.HttpResponse:
             )
         
         logging.info(f'Received message: {message}')
+
+        payload = build_adaptive_card(message)
         
         return func.HttpResponse(
-            f"Message received successfully: {message}",
+            json.dumps(payload),
             status_code=200
         )
         
