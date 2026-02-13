@@ -97,7 +97,14 @@ def message_handler(req: func.HttpRequest) -> func.HttpResponse:
         logging.info(f'Received message: {message}')
 
         payload = build_adaptive_card(message)
+
         
+        result = {
+  "echo": message,
+  "source": "Azure Function"
+}
+        return func.HttpResponse(json.dumps(result), mimetype="application/json", status_code=200)
+
         return func.HttpResponse(
     body=json.dumps(payload),
     status_code=200,
