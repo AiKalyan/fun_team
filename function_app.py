@@ -99,9 +99,11 @@ def message_handler(req: func.HttpRequest) -> func.HttpResponse:
         payload = build_adaptive_card(message)
         
         return func.HttpResponse(
-            json.dumps(payload),
-            status_code=200
-        )
+    body=json.dumps(payload),
+    status_code=200,
+    mimetype="application/json"
+)
+
         
     except ValueError:
         return func.HttpResponse(
