@@ -1,125 +1,76 @@
 import azure.functions as func
 import logging
-import os
 import json
+import os
 
+from botbuilder.core import BotFrameworkAdapter, BotFrameworkAdapterSettings, TurnContext
+from botbuilder.schema import Activity, ActivityTypes, Attachment
 
-
-def build_adaptive_card(message: str):
-    # Adaptive Card 1.4 payload
+# --- Adaptive Card builder (your card, unchanged idea) ---
+def build_adaptive_card_content(message: str):
     return {
-        "type": "message",
-        "attachments": [
-            {
-                "contentType": "application/vnd.microsoft.card.adaptive",
-                "content": {
-                    "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
-                    "type": "AdaptiveCard",
-                    "version": "1.4",
-                    "body": [
-                        {
-                            "type": "TextBlock",
-                            "size": "Large",
-                            "weight": "Bolder",
-                            "text": "New Message Received"
-                        },
-                        {
-                            "type": "TextBlock",
-                            "text": message,
-                            "wrap": True
-                        },
-                        {
-                            "type": "FactSet",
-                            "facts": [
-                                {"title": "Source:", "value": "Azure Function"},
-                            ]
-                        }
-                    ]
-                }
-            }
-        ]
+        "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+        "type": "AdaptiveCard",
+        "version": "1.4",
+        "body": [
+            {"type": "TextBlock", "size": "Large", "weight": "Bolder", "text": "New Message Received"},
+            {"type": "TextBlock", "text": message, "wrap": True},
+            {"type": "FactSet", "facts": [{"title": "Source:", "value": "Azure Function (Bot Endpoint)"}]},
+        ],
     }
+
+def build_adaptive_card_activity(message: str) -> Activity:
+    card = build_adaptive_card_content(message)
+    attachment = Attachment(
+        content_type="application/vnd.microsoft.card.adaptive",
+        content=card
+    )
+    return Activity(
+        type=ActivityTypes.message,
+        attachments=[attachment]
+    )
+
+# --- Bot logic: what to do when a message arrives ---
+async def on_turn(turn_context: TurnContext):
+    if turn_context.activity.type == ActivityTypes.message:
+        user_text = turn_context.activity.text or ""
+        reply = build_adaptive_card_activity(user_text)
+        await turn_context.send_activity(reply)
+
+# --- Adapter setup (Bot Framework) ---
+APP_ID = os.environ.get("MicrosoftAppId", "")
+APP_PASSWORD = os.environ.get("MicrosoftAppPassword", "")
+
+settings = BotFrameworkAdapterSettings(APP_ID, APP_PASSWORD)
+adapter = BotFrameworkAdapter(settings)
 
 app = func.FunctionApp()
 
-@app.function_name("HttpTrigger")
-@app.route(route="hello", methods=["GET", "POST"])
-def http_trigger(req: func.HttpRequest) -> func.HttpResponse:
+@app.function_name("TeamsBotMessages")
+@app.route(route="messages", methods=["POST"], auth_level=func.AuthLevel.ANONYMOUS)
+async def messages(req: func.HttpRequest) -> func.HttpResponse:
     """
-    Azure Function that responds to HTTP requests
+    Bot Framework messaging endpoint for Teams.
+    Azure Bot -> Teams channel will POST activities here.
     """
-    logging.info('HTTP trigger function processed a request.')
-    
-    name = req.params.get('name')
-    if not name:
-        try:
-            req_body = req.get_json()
-            name = req_body.get('name')
-        except ValueError:
-            pass
-    
-    if name:
-        return func.HttpResponse(
-            f"Hello, {name}! This HTTP-triggered function executed successfully.",
-            status_code=200
-        )
-    else:
-        return func.HttpResponse(
-            "Please pass a name on the query string or in the request body",
-            status_code=400
-        )
-
-@app.function_name("MessageHandler")
-@app.route(route="messages", methods=["POST"])
-def message_handler(req: func.HttpRequest) -> func.HttpResponse:
-    """
-    Azure Function that processes messages via POST request
-    Expects a JSON body with a 'message' field containing a string
-    """
-    logging.info('Message handler function processing a POST request.')
-    
     try:
-        req_body = req.get_json()
-        message = req_body.get('message')
-        
-        if not message:
+        body = req.get_body().decode("utf-8")
+        activity = Activity().deserialize(json.loads(body))
+        auth_header = req.headers.get("Authorization", "")
+
+        # process_activity validates auth and routes to your on_turn
+        invoke_response = await adapter.process_activity(activity, auth_header, on_turn)
+
+        # Bot Framework expects 200/201; invoke_response is used for invoke activities.
+        if invoke_response:
             return func.HttpResponse(
-                "Error: 'message' field is required in the request body",
-                status_code=400
+                status_code=invoke_response.status,
+                body=json.dumps(invoke_response.body) if invoke_response.body else None,
+                mimetype="application/json"
             )
-        
-        if not isinstance(message, str):
-            return func.HttpResponse(
-                "Error: 'message' must be a string",
-                status_code=400
-            )
-        
-        logging.info(f'Received message: {message}')
 
-        payload = build_adaptive_card(message)
+        return func.HttpResponse(status_code=200)
 
-        
-        result = {
-  "echo": message,
-  "source": "Azure Function"
-}
-        return func.HttpResponse(json.dumps(result), mimetype="application/json", status_code=200)
-
-        return func.HttpResponse(
-    body=json.dumps(payload),
-    status_code=200,
-    mimetype="application/json"
-)
-
-        
-    except ValueError:
-        return func.HttpResponse(
-            "Error: Invalid JSON in request body",
-            status_code=400
-        )
     except Exception as e:
-        logging.error(f'Error processing message: {str(e)}')
-        return func.HttpResponse(
-            f"Error processing message: {str(e)}", 
-            status_code=500
-        )
+        logging.exception("Bot endpoint error")
+        return func.HttpResponse(f"Error: {str(e)}", status_code=500)
