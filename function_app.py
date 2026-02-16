@@ -26,7 +26,7 @@ def build_adaptive_card_activity(message: str) -> Activity:
     )
     return Activity(
         type=ActivityTypes.message,
-        text="Here’s your card:",   # fallback text
+        text="Here's your card:",
         attachments=[attachment]
     )
 
@@ -53,10 +53,25 @@ app = func.FunctionApp()
 @app.route(route="messages", methods=["POST"], auth_level=func.AuthLevel.ANONYMOUS)
 async def messages(req: func.HttpRequest) -> func.HttpResponse:
     try:
+        # Parse request body
         body = req.get_body().decode("utf-8")
-        activity = Activity().deserialize(json.loads(body))
+        if not body:
+            return func.HttpResponse("Empty request body", status_code=400)
+        
+        # Parse JSON and create Activity
+        try:
+            activity_data = json.loads(body)
+            activity = Activity().deserialize(activity_data)
+        except json.JSONDecodeError as e:
+            logging.error(f"Invalid JSON in request body: {e}")
+            return func.HttpResponse("Invalid JSON", status_code=400)
+        except Exception as e:
+            logging.error(f"Failed to deserialize activity: {e}")
+            return func.HttpResponse("Invalid activity format", status_code=400)
+
         auth_header = req.headers.get("Authorization", "")
 
+        # Process the activity
         invoke_response = await adapter.process_activity(activity, auth_header, on_turn)
 
         if invoke_response:
@@ -66,8 +81,7 @@ async def messages(req: func.HttpRequest) -> func.HttpResponse:
                 mimetype="application/json"
             )
 
-        # Standard “accepted” for normal message activities
-        return func.HttpResponse(status_code=201)
+        return func.HttpResponse(status_code=200)  # Changed from 201 to 200
 
     except Exception as e:
         logging.exception("Bot endpoint error")
