@@ -2,11 +2,10 @@ import azure.functions as func
 import logging
 import json
 import os
-#test1
+
 from botbuilder.core import BotFrameworkAdapter, BotFrameworkAdapterSettings, TurnContext
 from botbuilder.schema import Activity, ActivityTypes, Attachment
 
-# --- Adaptive Card builder (your card, unchanged idea) ---
 def build_adaptive_card_content(message: str):
     return {
         "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
@@ -27,41 +26,39 @@ def build_adaptive_card_activity(message: str) -> Activity:
     )
     return Activity(
         type=ActivityTypes.message,
+        text="Here’s your card:",   # fallback text
         attachments=[attachment]
     )
 
-# --- Bot logic: what to do when a message arrives ---
 async def on_turn(turn_context: TurnContext):
     if turn_context.activity.type == ActivityTypes.message:
         user_text = turn_context.activity.text or ""
-        reply = build_adaptive_card_activity(user_text)
-        await turn_context.send_activity(reply)
+        await turn_context.send_activity(build_adaptive_card_activity(user_text))
 
-# --- Adapter setup (Bot Framework) ---
 APP_ID = os.environ.get("MicrosoftAppId", "")
 APP_PASSWORD = os.environ.get("MicrosoftAppPassword", "")
 
 settings = BotFrameworkAdapterSettings(APP_ID, APP_PASSWORD)
 adapter = BotFrameworkAdapter(settings)
 
+async def on_error(turn_context: TurnContext, error: Exception):
+    logging.exception(f"[on_turn_error] {error}")
+    await turn_context.send_activity("Sorry—something went wrong in the bot.")
+
+adapter.on_turn_error = on_error
+
 app = func.FunctionApp()
 
 @app.function_name("TeamsBotMessages")
 @app.route(route="messages", methods=["POST"], auth_level=func.AuthLevel.ANONYMOUS)
 async def messages(req: func.HttpRequest) -> func.HttpResponse:
-    """
-    Bot Framework messaging endpoint for Teams.
-    Azure Bot -> Teams channel will POST activities here.
-    """
     try:
         body = req.get_body().decode("utf-8")
         activity = Activity().deserialize(json.loads(body))
         auth_header = req.headers.get("Authorization", "")
 
-        # process_activity validates auth and routes to your on_turn
         invoke_response = await adapter.process_activity(activity, auth_header, on_turn)
 
-        # Bot Framework expects 200/201; invoke_response is used for invoke activities.
         if invoke_response:
             return func.HttpResponse(
                 status_code=invoke_response.status,
@@ -69,7 +66,8 @@ async def messages(req: func.HttpRequest) -> func.HttpResponse:
                 mimetype="application/json"
             )
 
-        return func.HttpResponse(status_code=200)
+        # Standard “accepted” for normal message activities
+        return func.HttpResponse(status_code=201)
 
     except Exception as e:
         logging.exception("Bot endpoint error")
